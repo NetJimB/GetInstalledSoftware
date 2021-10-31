@@ -1,0 +1,521 @@
+$Version = 'GetInstalledSoftwareV4.2.7'
+Clear-Host
+
+# This script will create a directory if needed and then save a document with the gathered data
+# Created by Jim Broderick for the Sacramento District Attorneys Office
+#
+# Usage: Run with Admin Level Creds from PowerShell
+# 
+# Table of Contents
+# -------------------------------------------------------------------------
+#
+# 1.2 Check if Working Directory exists and create if not - CheckWorkingDir
+# 2.0 Display Woring Environment - DisplayEnvironment
+# 3.0 Display Paging File - GetPagingInfo
+# 3.1 Display Drives - GetDriveInfo
+# 3.2 Get the Operating System - GetOS
+# 3.3 Get the Ip addresses - GetIPAddress
+# 4.0 Get working Applications - GetApps
+# 5.0 Get .Net version - GetDotNetVersion
+# 6.0 Get Windows Features - GetWinFeatures
+# 7.0 Display End of script - DisplayFooter
+
+Clear-Host
+# Echo Off
+
+###### Setup Environment
+#$date="-Backup-" + (Get-Date -Format "MM-dd-yyyy_hh:mm:ss")
+$date="-Backup-" + (Get-Date).ToString("s").Replace(":","-")
+$WorkingDirectory = "c:\DA-WindowsConfig"
+$Output = "$WorkingDirectory\WindowsFeatures.txt"
+Write-Host $Output
+#pause
+
+
+# mkdir C:\DAScripts
+$localPath = "c:\DAScripts"
+	$localPathTest = test-Path $localPath
+	if (!$localPathTest) { 
+	 mkdir $localPath
+	# LogWrite "'$localPath' directory created."
+	}
+
+# mkdir c:\DAFiles
+$localPath = "c:\DAFiles"
+	$localPathTest = test-Path $localPath
+	if (!$localPathTest) { 
+	 mkdir $localPath
+	# LogWrite "'$localPath' directory created."
+	}
+
+# mkdir c:\DA-Installed-Software
+$localPath = "c:\DA-Installed-Software"
+	$localPathTest = test-Path $localPath
+	if (!$localPathTest) { 
+	 mkdir $localPath
+	# LogWrite "'$localPath' directory created."
+	}
+    
+
+$Logfile = "C:\DAScripts\DaSetUp.log"
+
+Function LogWrite
+{
+    Param ([string]$logstring)
+    $logtime = (Get-Date).toString("yyyy/MM/dd HH:mm:ss")  
+    Add-content $Logfile -value "[$logtime] - '$logstring'"
+    Write-Host $logstring
+}
+
+function LogError {
+	$ErrorMessage = $_.Exception.Message
+	$FailedItem = $_.Exception.ItemName
+	#LogWrite "ERROR: - $ErrorMessage"
+    Write-Warning $ErrorMessage
+    #LogWrite "ERROR: - $FailedItem"
+    
+    # If ($FailedItem -ne "") {Write-Warning $FailedItem}
+
+    if ([string]::IsNullOrEmpty($FailedItem))
+    {
+        Write-Error $FailedItem
+    }
+
+    # Write-Warning "Paused in LogError Function - Ctl-C"
+    # pause
+}
+
+LogWrite "***** Start Script - $Version *****"
+
+# 1.0 Check if Working Directory exists and create if not - CheckWorkingDir
+function CheckWorkingDir {
+    LogWrite "Starting CheckWorkingDir"
+    try {
+        # Test if DA-Working Directory exists alert if it does
+        if ((Test-Path $WorkingDirectory -PathType Container)) {
+            Write-host "$WorkingDirectory already exists" -ForegroundColor Yellow
+            ""
+        } 
+
+        # Test if DA-Working Directory exists, create it and alert if it does NOT
+        if (!(Test-Path $WorkingDirectory -PathType Container)) {
+            New-Item -ItemType Directory -Force -Path $WorkingDirectory
+            Write-Host "Creating $WorkingDirectory" -ForegroundColor Yellow
+            # "Creating $WorkingDirectory" | Out-File -Append $Output
+        } 
+        # else {
+            # Write-host "$WorkingDirectory already exists" -ForegroundColor Yellow
+            # ""
+        # }
+
+        # Test if there is already a Summary Sheet and back it up if it does
+        if ([System.IO.File]::Exists($Output)) {
+            ""
+            Write-Host "Output file = $Output." -ForegroundColor Yellow
+            "Using $Output"  | Out-File -Append $Output
+            ""
+
+            Write-Host "$Output is being backuped up"
+            Copy-Item -Path $Output -Destination "$WorkingDirectory\WindowsFeatures$date.txt"
+            "$WorkingDirectory\WindowsFeatures$date.txt created for backup" | Out-File -Append $Output
+
+        }
+
+    # Test if there is already a Summary Sheet, create one and alert if it does NOT
+    if (![System.IO.File]::Exists($Output)) {
+        ""
+        Write-Host "$Output Does Not Exist"
+        LogWrite "$Output Does Not Exist"
+        # "-----------------------------------------------" | Out-File -Append $Output
+        # "$Output Does Not Exist" | Out-File -Append $Output
+        # Write-Host "$Output is being backuped up"
+        # Copy-Item -Path $Output -Destination "$WorkingDirectory\WindowsFeatures$date.txt"
+        # "$WorkingDirectory\WindowsFeatures$date.txt created for backup" | Out-File -Append $Output
+    }
+    # else {
+    #     # Write-Host "$Output is being backuped up"
+    #     # Copy-Item -Path $Output -Destination "$WorkingDirectory\WindowsFeatures$date.txt"
+    # }
+        
+    # Write-Host "Output file = $Output." -ForegroundColor Yellow
+    #     ""
+    LogWrite "---- WorkingDirectory = $WorkingDirectory"
+    }
+    catch {
+    LogError
+    }
+} # End CheckWorkingDir
+
+# 2.0 Display Working Environment - DisplayEnvironment
+function DisplayEnvironment{
+    LogWrite "Starting DisplayEnvironment"
+    try {
+        hostname | Out-File $Output
+        $IP = GetIPAddress
+        LogWrite "IP Returned as $IP"
+        "Server IP Address: $IP" | Out-File -Append $Output 
+
+        $OSVersion = GetOS
+        $OSVersion | Out-File -Append $Output
+        
+        try {
+            # Import-ModuleActiveDirectory
+            $domain = (get-computerinfo -Property "CsDomain").CsDomain
+            if ([string]::IsNullOrEmpty($domain))
+            {
+                Write-Error "Failed to get PS Domain Name"
+                pause
+            
+                $domain = (Get-ADDomain -Current LocalComputer).forrest
+                
+                if ([string]::IsNullOrEmpty($domain))
+                {
+                    Write-Error "Failed to get Domain using ADDomain"
+                $domain = "No Domain "
+                }
+            }
+
+
+            
+            # $domain = (Get-ADDomain -Current LocalComputer).forrest
+            Write-Host "domain = $domain"
+            "Domain: $domain" | Out-File -Append $Output
+
+        }
+        catch
+        {
+            Write-Warning "Failed to get Domain Name"
+            #LogError #"Failed to get Domain Name"
+            "Domain: Not Detected" | Out-File -Append $Output
+        }
+        Write-Warning "Domain = $domain  Exit"
+        # Pause
+        Get-date | Out-File -Append $Output
+
+        Write-Host "Server Name =  $env:computername " -ForegroundColor Green
+        $pcname=$env:computername
+
+        # $OSVersion = GetOS
+        # $OSVersion | Out-File -Append $Output
+        
+        "Version: $Version" | Out-File -Append $Output
+
+        "-----------------------------------------------" | Out-File -Append $Output
+        "  " | Out-File -Append $Output   
+
+        " Installed Applications " | Out-File -Append $Output
+        LogWrite "---- pcname = $pcname"
+    }
+    catch {
+        LogError
+    }
+    # Write-Warning "Pause at end of DisplayEnvironment- Ctl-C"
+    # pause
+} # End DisplayEnvironment
+
+# catch {
+#     Write-Warning "Something dreadfully wrong has happened. Exiting the Script for your own safety"
+#     exit 
+# }
+
+# 3.0 Display Paging File - GetPagingInfo
+function GetPagingInfo{
+    Try {        
+        LogWrite "Starting GetPagingInfo"
+        $PageFile = Get-WmiObject Win32_PageFileusage | Select-Object Name, AllocatedBasesSize, InstallDate
+        $PageFile | Out-File -Append $Output
+        Write-Host $PageFile
+        LogWrite "---- PageFile = $PageFile"
+        }
+    catch {
+        LogError
+    }
+ }# End GetPagingInfo
+
+# 3.1 Display Drives - GetDriveInfo
+function GetDriveInfo{
+    LogWrite "Starting GetDriveInfo"
+    try {
+        # List Attached Drives
+        # $VolumeInfo = Get-Volume
+        $VolumeInfo = Get-Volume | Sort-Object -Property DriveLetter
+        $VolumeInfo | Out-File -Append $Output
+
+        # List Shared Drives - Needs testing
+        # $SharedDrives = Net Use
+        # Net Use
+    LogWrite "---- VolumeInfo = $VolumeInfo"
+    }
+    catch {
+        LogError
+    }
+} # End GetDriveInfo
+
+# 3.2 Get the Operating System - GetOS
+function GetOS{
+    LogWrite "Starting GetOS"
+    try {
+        $OSVersion = (gcim Win32_OperatingSystem | Select-Object).Caption # | Out-File -Append $Output
+        # $OSVersion | Out-File -Append $Output
+        LogWrite "---- GetOS ran successfully - $OSVersion"
+    }
+    catch {
+        LogError
+        Write-Host "GetOS failed to retreive OS Info"  -ForegroundColor Green
+
+    }
+    return $OSVersion
+} #End GetOS
+
+# 3.3 Get the Ip addresses - GetIPAddress
+function GetIPAddress {
+    LogWrite "Starting GetIPAddress"
+    $IPAddress = (Get-NetIPAddress -AddressFamily IPv4 | Where-Object {$_.InterfaceAlias -ilike "Eth*"}).IPAddress
+    # LogWrite "IP Address = $IPAddress"
+    return $IPAddress
+    
+} # End GetIPAddress
+
+# 4.0 Get working Applications - GetApps
+function GetApps{
+    LogWrite "Starting GetApps"
+    try {
+        $list=@()
+        $InstalledSoftwareKey="SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"
+        $InstalledSoftware=[microsoft.win32.registrykey]::OpenRemoteBaseKey('LocalMachine',$pcname)
+        $RegistryKey=$InstalledSoftware.OpenSubKey($InstalledSoftwareKey) 
+        $SubKeys=$RegistryKey.GetSubKeyNames()
+        Foreach ($key in $SubKeys){
+            $thisKey=$InstalledSoftwareKey+"\\"+$key
+            $thisSubKey=$InstalledSoftware.OpenSubKey($thisKey)
+            $obj = New-Object PSObject
+            # $obj | Add-Member -MemberType NoteProperty -Name "ComputerName" -Value $pcname
+            $obj | Add-Member -MemberType NoteProperty -Name "DisplayName" -Value $($thisSubKey.GetValue("DisplayName"))
+            $obj | Add-Member -MemberType NoteProperty -Name "DisplayVersion" -Value $($thisSubKey.GetValue("DisplayVersion"))
+            $list += $obj
+        }
+
+        # Write-Host $env:computername -ForegroundColor Green
+        # $list | where { $_.DisplayName } | select ComputerName, DisplayName, DisplayVersion | FT
+        # $list | where { $_.DisplayName } | select DisplayName, DisplayVersion | Sort-Object DisplayName | FT
+        $list | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion | Sort-Object DisplayName | Format-Table -AutoSize
+        # $list | where { $_.DisplayName } | select ComputerName, DisplayName, DisplayVersion | FT | Out-File -Append $Output
+        $list | Where-Object { $_.DisplayName } | Select-Object DisplayName, DisplayVersion | Sort-Object DisplayName | Format-Table -AutoSize | Out-File -Append $Output 
+        # $list | where { $_.DisplayName } | select DisplayName, DisplayVersion -AutoSize | Sort-Object DisplayName | FT | Out-File -Append $Output
+    LogWrite "---- GetApps completed successfully  NOte: list = $list"
+    }
+    catch {
+        LogError
+    }
+} # End GetApps
+
+# 5.0 Get .Net version - GetDotNetVersion
+function GetDotNetVersion {
+    LogWrite "Starting GetDotNetVersion"
+    try {
+        $gpParams = @{
+            Path        = 'HKLM:\SOFTWARE\Microsoft\NET Framework Setup\NDP\v4\Full'
+            ErrorAction = 'SilentlyContinue'
+        }
+        $release = Get-ItemProperty @gpParams | Select-Object -ExpandProperty Release
+
+        ".NET Framework$(
+            switch ($release) {
+                ({ $_ -ge 528040 }) { ' 4.8'; break }
+                ({ $_ -ge 461808 }) { ' 4.7.2'; break }
+                ({ $_ -ge 461308 }) { ' 4.7.1'; break }
+                ({ $_ -ge 460798 }) { ' 4.7'; break }
+                ({ $_ -ge 394802 }) { ' 4.6.2'; break }
+                ({ $_ -ge 394254 }) { ' 4.6.1'; break }
+                ({ $_ -ge 393295 }) { ' 4.6'; break }
+                ({ $_ -ge 379893 }) { ' 4.5.2'; break }
+                ({ $_ -ge 378675 }) { ' 4.5.1'; break }
+                ({ $_ -ge 378389 }) { ' 4.5'; break }
+                default { ': 4.5+ not installed.' }
+            }
+        )"
+    LogWrite "---- .Net retrieved successfully"
+}
+    catch {
+        LogError
+    }
+} # End GetDotNetVersion
+
+function GetWinFeatures {
+    LogWrite "Starting GetWinFeatures"
+    try {
+        "-----------------------------------------------" | Out-File -Append $Output
+        "  " | Out-File -Append $Output
+        " Installed Windows Features " | Out-File -Append $Output
+
+        #Get-WindowsFeature | Where-Object {$_.Installed -match “True”} | Select-Object -Property Name | Out-File -Append $Output # C:\Temp\WindowsFeatures.txt
+        #Get-WindowsFeature
+
+        $WindowsFeatures = Get-WindowsFeature | Where-Object {$_.Installed -match "True"} | Select-Object -Property Name
+        # $WindowsFeatures = $WindowsFeatures | sort 
+        # $WindowsFeatures
+        $WindowsFeatures | Sort-Object -Property name | Out-File -Append $Output
+
+        # $WindowsFeatures = Get-WindowsFeature | Where-Object {$_.Installed -match “True”} | Select-Object -Property Name | Out-File -Append $Output # C:\Temp\WindowsFeatures.txt
+        $WindowsFeatures
+        # $WindowsFeatures = $WindowsFeatures | Out-File -Append $Output # C:\Temp\WindowsFeatures.
+        # Write-Host "-----------------------------------------------" -ForegroundColor Red
+        # Write-Host "Use Add-WindowsFeature [FeatureToInstall]" -ForegroundColor Red
+        # "-----------------------------------------------" | Out-File -Append $Output
+        # "Use Add-WindowsFeature [FeatureToInstall]" | Out-File -Append $Output
+        # "Version: $Version" | Out-File -Append $Output
+    LogWrite "---- Windows Features retrieved successfully"
+    }
+    catch {
+        LogError
+    }
+} # End GetWinFeatures
+
+# 7.0 Display End of script - DisplayFooter
+function DisplayFooter {
+    LogWrite "Starting DisplayFooter"
+    try {
+        Write-Host "-----------------------------------------------" -ForegroundColor Red
+        Write-Host "Use Add-WindowsFeature [FeatureToInstall]" -ForegroundColor Red
+        "-----------------------------------------------" | Out-File -Append $Output
+        "Use Add-WindowsFeature [FeatureToInstall]" | Out-File -Append $Output
+        Write-Host
+        Write-Host "\\$pcname\c$\DA-WindowsConfig\" -ForegroundColor Yellow
+
+        # c:\Temp\WindowsFeatures.txt
+        # c:\WindowsFeatures\c:\Temp\WindowsFeatures.txt
+        Start-Process notepad.exe $Output
+    }
+    catch {
+        LogError
+    }
+    LogWrite "************** End Script ****************"
+} # End DisplayFooter
+
+Function Get-HotfixAll {
+        [CmdletBinding()]
+        [Alias()]
+        [OutputType([int])]
+        Param
+        (
+            # Param1 help description
+            [Parameter(Mandatory=$true,
+                    ValueFromPipelineByPropertyName=$true,
+                    Position=0)]
+            $Computername
+        )
+
+    try {
+        LogWrite "Starting Get-HotfixAll"
+        Invoke-Command -ScriptBlock {
+        $Session = New-Object -ComObject Microsoft.Update.Session            
+        $Searcher = $Session.CreateUpdateSearcher()         
+        $HistoryCount = $Searcher.GetTotalHistoryCount()            
+        # http://msdn.microsoft.com/en-us/library/windows/desktop/aa386532%28v=vs.85%29.aspx            
+        $Searcher.QueryHistory(0,$HistoryCount) | ForEach-Object -Process {            
+    
+            $Title = $null            
+            if($_.Title -match "\(KB\d{6,7}\)"){            
+                # Split returns an array of strings            
+                $Title = ($_.Title -split '.*\((KB\d{6,7})\)')[1]            
+            }else{            
+                $Title = $_.Title            
+            }  
+                
+    
+            # http://msdn.microsoft.com/en-us/library/windows/desktop/aa387095%28v=vs.85%29.aspx            
+            $Result = $null            
+            Switch ($_.ResultCode)            
+            {            
+                0 { $Result = 'NotStarted'}            
+                1 { $Result = 'InProgress' }            
+                2 { $Result = 'Succeeded' }            
+                3 { $Result = 'SucceededWithErrors' }            
+                4 { $Result = 'Failed' }            
+                5 { $Result = 'Aborted' }            
+                default { $Result = $_ }            
+            }            
+            New-Object -TypeName PSObject -Property @{            
+                ComputerName = $ENV:Computername;
+                InstalledOn = Get-Date -Date $_.Date;            
+                KBArticle = $Title;            
+                Name = $_.Title;            
+                Status = $Result            
+            }            
+            
+        } | Sort-Object -Descending:$true -Property InstalledOn |             
+        Select-Object -Property *  
+        } 
+    }
+    catch {
+        LogError
+    }
+}
+
+########## START ##############
+# Check if Working Directory exists and create if not - CheckWorkingDir
+    CheckWorkingDir
+
+# Get the Ip addresses - GetIPAddress
+# $IP = GetIPAddress
+# LogWrite "IP Returned as $IP"
+# "Server IP Address: $IP" | Out-File -Append $Output    
+
+# Display the OS in Report
+    # GetOS
+    # $OSVersion = GetOS
+    # $OSVersion  | Out-File $Output 
+
+# Display Woring Environment - DisplayEnvironment
+    DisplayEnvironment
+    # Write-Warning "Pause at DisplayEnvironment Ctl-C"
+    # pause
+    try{
+        #$CsInfo = (Get-ComputerInfo -Property CsCaption, CsDomain, OsLocalDateTime, OsLastBootUpTime) #| Out-File -Append $CsInfo
+        Get-ComputerInfo -Property CsCaption, CsDomain, OsLocalDateTime, OsLastBootUpTime
+        LogWrite "CsInfo = $CsInfo"
+    }
+    catch {
+        # LogError
+        # systeminfo /fo csv | ConvertFrom-Csv | select 'OS Name' | Format-List | Out-File -Append $Output
+    }
+
+# Get working Applications - GetApps
+    GetApps
+
+# Get .Net version - GetDotNetVersion
+    $dotNetVersion = GetDotNetVersion
+    Write-Host $dotNetVersion -ForegroundColor Red
+    # Write-Host $dotNetVersion -ForegroundColor Red | Out-File -Append $Output # C:\Temp\WindowsFeatures.txt
+    $dotNetVersion | Out-File -Append $Output # C:\Temp\WindowsFeatures.txt
+
+# Get Windows Features - GetWinFeatures
+    GetWinFeatures
+    # Write-Host $WindowsFeatures
+        Write-Host "-----------------------------------------------" -ForegroundColor Red
+
+    # GetOS
+    #    gcim Win32_OperatingSystem | Select-Object Caption
+    GetPagingInfo
+    GetDriveInfo
+
+    "Last Patches Installed Condition" | Out-File -Append $Output
+    $Last4HotFixes = Get-HotfixAll -computername "."
+    $Last4HotFixes | Sort-Object -Descending:$true -Property InstalledOn  | Select-Object -first 4 | Out-File -Append $Output
+    # LogWrite "---- Last4HotFixes retrieved successfully"
+
+    # PowerShell Version Installed
+    "PowerShell Version Installed" | Out-File -Append $Output
+    $host | Out-File -Append $Output
+
+# Display End of script - DisplayFooter
+    DisplayFooter
+    Write-Host
+    try {
+        Write-Host "\\$pcname\c$\DA-WindowsConfig\" -ForegroundColor Yellow
+    }
+    catch {
+        LogWrite
+    }
+
+LogWrite ""
